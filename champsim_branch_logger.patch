@@ -1,0 +1,24 @@
+diff --git a/src/ooo_cpu.cc b/src/ooo_cpu.cc
+index 1ac04ff5..9f668baa 100644
+--- a/src/ooo_cpu.cc
++++ b/src/ooo_cpu.cc
+@@ -19,6 +19,7 @@
+ #include <algorithm>
+ #include <chrono>
+ #include <cmath>
++#include <fstream>
+ #include <numeric>
+ #include <fmt/chrono.h>
+ #include <fmt/core.h>
+@@ -162,6 +163,11 @@ bool O3_CPU::do_predict_branch(ooo_model_instr& arch_instr)
+       stop_fetch = arch_instr.branch_taken; // if correctly predicted taken, then we can't fetch anymore instructions this cycle
+     }
+ 
++    if (arch_instr.branch == BRANCH_CONDITIONAL && !warmup) {
++      static std::ofstream branch_file("conditional_branches.csv");
++
++      branch_file << arch_instr.instr_id << "," << arch_instr.ip.to<unsigned long>() << "," << static_cast<int>(arch_instr.branch_taken) << "\n";
++    }
+     impl_update_btb(arch_instr.ip, arch_instr.branch_target, arch_instr.branch_taken, arch_instr.branch);
+     impl_last_branch_result(arch_instr.ip, arch_instr.branch_target, arch_instr.branch_taken, arch_instr.branch);
+   }
