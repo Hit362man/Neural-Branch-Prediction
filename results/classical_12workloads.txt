@@ -1,0 +1,18 @@
+Workload          Bimodal     Gshare
+mcf               98.63%     98.46%
+gcc               93.27%     99.95%
+perlbench         96.88%     97.51%
+x264              85.97%     97.39%
+leela             80.12%     78.59%
+deepsjeng         83.65%     87.67%
+xz                77.64%     75.18%
+omnetpp           93.99%     95.00%
+xalancbmk         95.66%     98.74%
+exchange2         79.26%     94.89%
+wrf               99.94%     99.94%
+imagick           99.70%     99.70%
+
+OVERALL
+Bimodal: 91.42%
+Gshare:  94.70%
+MLP:     95.31%
