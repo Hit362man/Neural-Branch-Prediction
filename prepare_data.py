@@ -4,50 +4,100 @@ from collections import deque
 from pathlib import Path
 
 H = 32
-data_dir = Path("data")
-data_dir.mkdir(exist_ok=True)
 
-# Read the branch records extracted by ChampSim
-with open("champsim/conditional_branches.csv") as f:
-    branches = [
-        (int(pc), int(taken))
-        for _, pc, taken in csv.reader(f)
-    ]
+ROOT = Path(__file__).resolve().parent
+DATA = ROOT.parent / "data"
 
-n = len(branches)
-train_end = int(n * 0.70)
-val_end = int(n * 0.85)
+WORKLOADS = {
+    "mcf": 0,
+    "gcc": 1,
+    "perlbench": 2,
+    "x264": 3,
+}
 
-history = deque(maxlen=H)
+DATA.mkdir(exist_ok=True)
 
 files = {
-    "train": open(data_dir / "train.csv", "w"),
-    "val": open(data_dir / "val.csv", "w"),
-    "test": open(data_dir / "test.csv", "w"),
+    split: open(DATA / f"{split}.csv", "w", newline="")
+    for split in ("train", "val", "test")
 }
-writers = {k: csv.writer(f) for k, f in files.items()}
 
-header = ["pc"] + [f"h{i}" for i in range(H)] + ["taken"]
+writers = {
+    split: csv.writer(f)
+    for split, f in files.items()
+}
+
+header = (
+    ["pc"]
+    + [f"h{i}" for i in range(H)]
+    + ["workload_id", "raw_pc", "taken"]
+)
+
 for writer in writers.values():
     writer.writerow(header)
 
-counts = {"train": 0, "val": 0, "test": 0}
+totals = {"train": 0, "val": 0, "test": 0}
 
-for i, (pc, taken) in enumerate(branches):
-    if len(history) == H:
-        split = "train" if i < train_end else (
-            "val" if i < val_end else "test"
-        )
-        writers[split].writerow([pc] + list(history) + [taken])
-        counts[split] += 1
+for workload, workload_id in WORKLOADS.items():
 
-    # Update history AFTER creating the sample
-    history.append(taken)
+    path = DATA / f"{workload}_1m_branches.csv"
+
+    with open(path) as f:
+        n = sum(1 for _ in csv.reader(f))
+
+    train_end = int(n * 0.70)
+    val_end = int(n * 0.85)
+
+    history = deque(maxlen=H)
+    counts = {"train": 0, "val": 0, "test": 0}
+
+    with open(path) as f:
+        reader = csv.reader(f)
+
+        for i, row in enumerate(reader):
+            instr_id, pc, taken = map(int, row)
+
+            if taken not in (0, 1):
+                raise ValueError("Invalid branch outcome")
+
+            if not (0 <= pc < 2**64):
+                raise ValueError("PC outside 64-bit range")
+
+            # Unique branch identity across workloads
+            branch_key = (workload_id << 64) | pc
+
+            if len(history) == H:
+
+                if i < train_end:
+                    split = "train"
+                elif i < val_end:
+                    split = "val"
+                else:
+                    split = "test"
+
+                writers[split].writerow(
+                    [branch_key]
+                    + list(history)
+                    + [workload_id, pc, taken]
+                )
+
+                counts[split] += 1
+                totals[split] += 1
+
+            # Current outcome is added AFTER sample creation
+            history.append(taken)
+
+    print(f"\n{workload.upper()}")
+    print(f"  Total branches: {n}")
+    print(f"  Training: {counts['train']}")
+    print(f"  Validation: {counts['val']}")
+    print(f"  Testing: {counts['test']}")
 
 for f in files.values():
     f.close()
 
-print("Total branch records:", n)
-print("Training samples:", counts["train"])
-print("Validation samples:", counts["val"])
-print("Testing samples:", counts["test"])
+print("\nCOMBINED DATASET")
+for split, count in totals.items():
+    print(f"{split}: {count}")
+
+print("Total samples:", sum(totals.values()))
