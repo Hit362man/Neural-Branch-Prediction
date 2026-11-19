@@ -92,3 +92,87 @@ class BranchMLP(nn.Module):
 
 model = BranchMLP(len(unique_pcs))
 
+optimizer = torch.optim.Adam(
+    model.parameters(), lr=0.001
+)
+criterion = nn.BCEWithLogitsLoss()
+
+def evaluate(loader):
+    model.eval()
+    total_loss = 0
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for pc, history, labels in loader:
+            logits = model(pc, history)
+
+            loss = criterion(logits, labels)
+            predictions = (logits >= 0).float()
+
+            count = len(labels)
+            total_loss += loss.item() * count
+            correct += (predictions == labels).sum().item()
+            total += count
+
+    return total_loss / total, 100 * correct / total
+
+print("Training samples:", len(train_data))
+print("Validation samples:", len(val_data))
+print("Testing samples:", len(test_data))
+print("Unique training PCs:", len(unique_pcs))
+print("Model parameters:",
+      sum(p.numel() for p in model.parameters()))
+
+best_val_loss = float("inf")
+checkpoint_dir = ROOT / "checkpoints"
+checkpoint_dir.mkdir(exist_ok=True)
+checkpoint_path = checkpoint_dir / "mlp_mcf.pt"
+
+for epoch in range(EPOCHS):
+    model.train()
+    running_loss = 0
+
+    for pc, history, labels in train_loader:
+        optimizer.zero_grad()
+
+        logits = model(pc, history)
+        loss = criterion(logits, labels)
+
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item() * len(labels)
+
+    train_loss = running_loss / len(train_data)
+    val_loss, val_accuracy = evaluate(val_loader)
+
+    print(
+        f"Epoch {epoch+1}/{EPOCHS} | "
+        f"Train loss: {train_loss:.4f} | "
+        f"Val loss: {val_loss:.4f} | "
+        f"Val accuracy: {val_accuracy:.2f}%"
+    )
+
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        torch.save({
+            "model_state_dict": model.state_dict(),
+            "pc_to_id": pc_to_id,
+            "history_length": H,
+            "embedding_dim": EMBED_DIM
+        }, checkpoint_path)
+
+# Test only the model selected using validation data
+checkpoint = torch.load(
+    checkpoint_path, map_location="cpu"
+)
+model.load_state_dict(checkpoint["model_state_dict"])
+
+test_loss, test_accuracy = evaluate(test_loader)
+
+print("\nFinal held-out test results")
+print(f"Test accuracy: {test_accuracy:.2f}%")
+print(f"Misprediction rate: {100-test_accuracy:.2f}%")
+print("Model saved to:", checkpoint_path)
+
